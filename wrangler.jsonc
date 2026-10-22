@@ -1,0 +1,6 @@
+{
+  "name": "webrtc-api",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-01",
+  "assets": { "directory": "./docs" }
+}
