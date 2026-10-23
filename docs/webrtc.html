@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WebRTC Test</title>
+<style>
+  body{font:15px system-ui,sans-serif;background:#0d1117;color:#e6edf3;max-width:760px;margin:30px auto;padding:0 16px}
+  h1{font-size:20px} table{width:100%;border-collapse:collapse;margin:12px 0}
+  th,td{text-align:left;padding:8px;border-bottom:1px solid #30363d;word-break:break-all}
+  .ok{color:#3fb950} .warn{color:#f85149} .muted{color:#8b949e}
+  .box{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:12px 16px;margin:12px 0}
+</style>
+</head>
+<body>
+<h1>WebRTC Test</h1>
+<div class="box">
+  <div>HTTP IP (what the server sees): <b id="http">…</b></div>
+  <div>WebRTC public IPv4: <b id="v4">…</b></div>
+  <div>WebRTC public IPv6: <b id="v6">…</b></div>
+  <div id="verdict" style="margin-top:8px"></div>
+</div>
+<table>
+  <thead><tr><th>Type</th><th>Protocol</th><th>Address</th><th>Port</th></tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+<p class="muted">Local addresses may show as random <code>.local</code> names. That is the browser hiding your LAN IP (mDNS) and is normal.</p>
+
+<script>
+const $ = id => document.getElementById(id);
+const found = { srflx: new Set(), host: new Set(), relay: new Set() };
+
+function addRow(type, proto, addr, port) {
+  const tr = document.createElement("tr");
+  [type, proto, addr, port].forEach(v => {
+    const td = document.createElement("td");
+    td.textContent = v;
+    tr.appendChild(td);
+  });
+  $("rows").appendChild(tr);
+}
+
+const isV6 = a => a.includes(":");
+
+function parse(candidate) {
+  // candidate:<foundation> <comp> <proto> <prio> <addr> <port> typ <type> ...
+  const p = candidate.split(" ");
+  return { proto: p[2], addr: p[4], port: p[5], type: p[7] };
+}
+
+async function getHttpIp() {
+  try {
+    const r = await fetch("/ip", { cache: "no-store" });
+    return (await r.json()).ip || null;
+  } catch { return null; }
+}
+
+function finish(httpIp) {
+  const pub = [...found.srflx];
+  const v4 = pub.filter(a => !isV6(a));
+  const v6 = pub.filter(isV6);
+  $("v4").textContent = v4.join(", ") || "none";
+  $("v6").textContent = v6.join(", ") || "none";
+
+  const v = $("verdict");
+  if (!pub.length) {
+    v.textContent = "No public WebRTC IP found (WebRTC blocked, or no STUN access).";
+    v.className = "muted";
+    return;
+  }
+  if (httpIp && pub.includes(httpIp)) {
+    v.textContent = "WebRTC public IP matches your HTTP IP. No leak.";
+    v.className = "ok";
+  } else if (httpIp) {
+    v.textContent = "WebRTC shows a public IP different from your HTTP IP. Check if it is your real IP (possible leak), or just the other IP version.";
+    v.className = "warn";
+  } else {
+    v.textContent = "Could not read HTTP IP to compare.";
+    v.className = "muted";
+  }
+}
+
+async function run() {
+  const httpIp = await getHttpIp();
+  $("http").textContent = httpIp || "unknown";
+
+  if (!window.RTCPeerConnection) {
+    $("verdict").textContent = "WebRTC is disabled or not supported in this browser.";
+    $("verdict").className = "muted";
+    return;
+  }
+
+  const pc = new RTCPeerConnection({
+    iceServers: [{ urls: [
+      "stun:stun.l.google.com:19302",
+      "stun:stun1.l.google.com:19302"
+    ] }]
+  });
+  pc.createDataChannel("x");
+
+  let done = false;
+  const end = () => { if (done) return; done = true; pc.close(); finish(httpIp); };
+
+  pc.onicecandidate = e => {
+    if (!e.candidate) return end();
+    const c = parse(e.candidate.candidate);
+    if (!c.addr) return;
+    if (found[c.type]) found[c.type].add(c.addr);
+    addRow(c.type, c.proto, c.addr, c.port);
+  };
+
+  await pc.setLocalDescription(await pc.createOffer());
+  setTimeout(end, 5000);
+}
+run();
+</script>
+</body>
+</html>

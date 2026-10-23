@@ -2,5 +2,8 @@
   "name": "webrtc-api",
   "main": "src/index.js",
   "compatibility_date": "2026-10-01",
-  "assets": { "directory": "./docs" }
+  "assets": { "directory": "./docs", "binding": "ASSETS" },
+  "kv_namespaces": [
+    { "binding": "RESULTS", "id": "0c2912899d084126adc8f7fabfef5815" }
+  ]
 }
